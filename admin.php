@@ -559,7 +559,7 @@ if (trim($_POST['service_code_manual']) !== '') {
 
   if ($action === 'fetch_notifications') {
     $arr = [];
-    $res = $conn->query("SELECT id, message, created_at, leave_id FROM notifications WHERE type='payment' ORDER BY created_at DESC");
+    $res = $conn->query("SELECT n.id, n.message, n.created_at, n.leave_id, sl.payment_amount FROM notifications n LEFT JOIN sick_leaves sl ON n.leave_id=sl.id WHERE n.type='payment' ORDER BY n.created_at DESC");
     while ($row = $res->fetch_assoc()) { $arr[] = $row; }
     echo json_encode(['success' => true, 'data' => $arr]);
     exit;
@@ -688,7 +688,7 @@ while ($r = $res->fetch_assoc()) {
 
 // ==== 13. جلب إشعارات المدفوعات ====
 $notifications_payment = [];
-$res = $conn->query("SELECT id, message, created_at, leave_id FROM notifications WHERE type='payment' ORDER BY created_at DESC");
+$res = $conn->query("SELECT n.id, n.message, n.created_at, n.leave_id, sl.payment_amount FROM notifications n LEFT JOIN sick_leaves sl ON n.leave_id=sl.id WHERE n.type='payment' ORDER BY n.created_at DESC");
 while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
 ?>
 <!DOCTYPE html>
@@ -1460,7 +1460,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
           </div>
           <ul id="notifPayments" class="list-group">
             <?php foreach ($notifications_payment as $n): ?>
-              <li class="list-group-item d-flex justify-content-between align-items-center" data-leave="<?= $n['leave_id'] ?>" data-id="<?= $n['id'] ?>">
+              <li class="list-group-item d-flex justify-content-between align-items-center" data-leave="<?= $n['leave_id'] ?>" data-id="<?= $n['id'] ?>" data-amount="<?= $n['payment_amount'] ?>">
                 <span><?= htmlspecialchars($n['message']) ?></span>
                 <div class="btn-group">
                   <button class="btn btn-info btn-sm btn-view-leave" data-leave="<?= $n['leave_id'] ?>">تفاصيل</button>
@@ -3092,6 +3092,9 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
       function showLeaveDetails(id){
         const row = document.querySelector(`#leavesTable tr[data-id="${id}"]`) || document.querySelector(`#archivedTable tr[data-id="${id}"]`);
         if(!row) return;
+        row.scrollIntoView({behavior:'smooth', block:'center'});
+        row.classList.add('table-warning');
+        setTimeout(()=>row.classList.remove('table-warning'),2000);
         const table = row.closest('table');
         const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent);
         let html = '<div class="table-responsive"><table class="table table-bordered text-center"><thead><tr>';
@@ -3175,13 +3178,18 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
         });
         document.querySelectorAll('#notifPayments .btn-pay-notif').forEach(btn => {
           btn.onclick = () => {
-            const lid = btn.getAttribute('data-leave');
+            const li = btn.closest('li');
+            const lid = li.getAttribute('data-leave');
+            let amount = li.getAttribute('data-amount') || '0';
+            const val = prompt('تأكيد مبلغ الدفع', amount);
+            if(val === null) return;
+            amount = parseFloat(val) || 0;
             const fd = new FormData();
             fd.append('action', 'mark_leave_paid');
             fd.append('leave_id', lid);
-            fd.append('amount', 0);
+            fd.append('amount', amount);
             fd.append('csrf_token', '<?= $_SESSION["csrf_token"] ?>');
-            fetch('', {method:'POST', body: fd}).then(r=>r.json()).then(res=>{ if(res.success){ btn.closest('li').remove(); }});
+            fetch('', {method:'POST', body: fd}).then(r=>r.json()).then(res=>{ if(res.success){ li.remove(); showAlert('success','تم التحديث'); }});
           };
         });
         document.querySelectorAll('#notifPayments .btn-view-leave').forEach(btn => {
@@ -3207,10 +3215,12 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
               li.className = 'list-group-item d-flex justify-content-between align-items-center';
               li.setAttribute('data-leave', n.leave_id);
               li.setAttribute('data-id', n.id);
+              li.setAttribute("data-amount", n.payment_amount);
               li.innerHTML = `<span>${n.message}</span><div class="btn-group"><button class="btn btn-info btn-sm btn-view-leave" data-leave="${n.leave_id}">تفاصيل</button><button class="btn btn-success btn-sm btn-pay-notif" data-leave="${n.leave_id}">مدفوعة</button><button class="btn btn-danger btn-sm btn-del-notif" data-id="${n.id}">حذف</button></div>`;
               ul.appendChild(li);
             });
             attachNotifHandlers();
+            showAlert('success','تم التحديث');
           }
         });
       });
