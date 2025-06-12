@@ -75,8 +75,11 @@ $conn->query("CREATE TABLE IF NOT EXISTS patients (
 $conn->query("CREATE TABLE IF NOT EXISTS doctors (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
-  title VARCHAR(100) NOT NULL
+  title VARCHAR(100) NOT NULL,
+  note VARCHAR(255) DEFAULT NULL
 ) ENGINE=InnoDB CHARSET=utf8mb4");
+
+
 
 $conn->query("CREATE TABLE IF NOT EXISTS sick_leaves (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -139,7 +142,7 @@ function get_or_add_patient($conn, $name, $ident)
   $stmt->close();
   return $pid;
 }
-function get_or_add_doctor($conn, $name, $title)
+function get_or_add_doctor($conn, $name, $title, $note = null)
 {
   $did = null;
   $stmt = $conn->prepare("SELECT id FROM doctors WHERE name=? AND title=?");
@@ -148,11 +151,17 @@ function get_or_add_doctor($conn, $name, $title)
   $stmt->bind_result($did);
   if ($stmt->fetch()) {
     $stmt->close();
+    if($note !== null){
+      $u = $conn->prepare("UPDATE doctors SET note=? WHERE id=?");
+      $u->bind_param("si", $note, $did);
+      $u->execute();
+      $u->close();
+    }
     return $did;
   }
   $stmt->close();
-  $stmt = $conn->prepare("INSERT INTO doctors (name, title) VALUES (?, ?)");
-  $stmt->bind_param("ss", $name, $title);
+  $stmt = $conn->prepare("INSERT INTO doctors (name, title, note) VALUES (?, ?, ?)");
+  $stmt->bind_param("sss", $name, $title, $note);
   $stmt->execute();
   $did = $stmt->insert_id;
   $stmt->close();
@@ -168,11 +177,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   if ($action === 'add_doctor') {
     $dname = trim($_POST['doctor_name']);
     $dtitle = trim($_POST['doctor_title']);
+    $dnote = trim($_POST['doctor_note'] ?? '');
     if (!$dname || !$dtitle) {
       echo json_encode(['success' => false, 'message' => 'أدخل اسم الطبيب والمسمى الوظيفي']);
       exit;
     }
-    $did = get_or_add_doctor($conn, $dname, $dtitle);
+    $did = get_or_add_doctor($conn, $dname, $dtitle, $dnote);
     $row = $conn->query("SELECT * FROM doctors WHERE id=$did")->fetch_assoc();
     echo json_encode(['success' => true, 'doctor' => $row]);
     exit;
@@ -181,8 +191,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $did = intval($_POST['doctor_id']);
     $dname = trim($_POST['doctor_name']);
     $dtitle = trim($_POST['doctor_title']);
-    $stmt = $conn->prepare("UPDATE doctors SET name=?, title=? WHERE id=?");
-    $stmt->bind_param("ssi", $dname, $dtitle, $did);
+    $dnote = trim($_POST['doctor_note'] ?? '');
+    $stmt = $conn->prepare("UPDATE doctors SET name=?, title=?, note=? WHERE id=?");
+    $stmt->bind_param("sssi", $dname, $dtitle, $dnote, $did);
     $stmt->execute();
     $stmt->close();
     $row = $conn->query("SELECT * FROM doctors WHERE id=$did")->fetch_assoc();
@@ -251,11 +262,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['doctor_select'] === 'manual') {
       $dm_name = trim($_POST['doctor_manual_name']);
       $dm_title = trim($_POST['doctor_manual_title']);
+      $dm_note = trim($_POST['doctor_manual_note'] ?? '');
       if (!$dm_name || !$dm_title) {
         echo json_encode(['success' => false, 'message' => 'أدخل اسم الطبيب ومسمّاه الوظيفي']);
         exit;
       }
-      $did = get_or_add_doctor($conn, $dm_name, $dm_title);
+      $did = get_or_add_doctor($conn, $dm_name, $dm_title, $dm_note);
     } else {
       $did = intval($_POST['doctor_select']);
       if (!$did) {
@@ -376,7 +388,7 @@ if (trim($_POST['service_code_manual']) !== '') {
                                sl.is_companion, sl.companion_name, sl.companion_relation,
                                sl.is_paid, sl.payment_amount,
                                DATE_FORMAT(sl.created_at, '%Y-%m-%d %r') AS created_at,
-                               p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title,
+                               p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title, d.note AS doctor_note,
                                (SELECT COUNT(*) FROM leave_queries WHERE leave_id=sl.id) AS queries_count
                         FROM sick_leaves sl
                         JOIN patients p ON sl.patient_id=p.id
@@ -441,7 +453,7 @@ if (trim($_POST['service_code_manual']) !== '') {
                                sl.is_companion, sl.companion_name, sl.companion_relation,
                                sl.is_paid, sl.payment_amount,
                                DATE_FORMAT(sl.updated_at, '%Y-%m-%d %r') AS updated_at,
-                               p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title,
+                               p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title, d.note AS doctor_note,
                                (SELECT COUNT(*) FROM leave_queries WHERE leave_id=sl.id) AS queries_count
                         FROM sick_leaves sl
                         JOIN patients p ON sl.patient_id=p.id
@@ -559,7 +571,7 @@ if (trim($_POST['service_code_manual']) !== '') {
 
   if ($action === 'fetch_notifications') {
     $arr = [];
-    $res = $conn->query("SELECT id, message, created_at, leave_id FROM notifications WHERE type='payment' ORDER BY created_at DESC");
+    $res = $conn->query("SELECT n.id, n.message, n.created_at, n.leave_id, sl.payment_amount FROM notifications n LEFT JOIN sick_leaves sl ON n.leave_id=sl.id WHERE n.type='payment' ORDER BY n.created_at DESC");
     while ($row = $res->fetch_assoc()) { $arr[] = $row; }
     echo json_encode(['success' => true, 'data' => $arr]);
     exit;
@@ -608,7 +620,7 @@ while ($row = $res->fetch_assoc()) {
 }
 
 $doctors = [];
-$res = $conn->query("SELECT id, name, title FROM doctors ORDER BY name ASC");
+$res = $conn->query("SELECT id, name, title, note FROM doctors ORDER BY name ASC");
 while ($row = $res->fetch_assoc()) {
   $doctors[] = $row;
 }
@@ -634,7 +646,7 @@ $res = $conn->query("SELECT sl.id, sl.patient_id, sl.service_code, sl.issue_date
                              sl.is_companion, sl.companion_name, sl.companion_relation,
                              sl.is_paid, sl.payment_amount,
                              DATE_FORMAT(sl.created_at, '%Y-%m-%d %r') AS created_at,
-                             p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title,
+                             p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title, d.note AS doctor_note,
                              (SELECT COUNT(*) FROM leave_queries WHERE leave_id=sl.id) AS queries_count
                       FROM sick_leaves sl
                       JOIN patients p ON sl.patient_id=p.id
@@ -651,7 +663,7 @@ $res = $conn->query("SELECT sl.id, sl.patient_id, sl.service_code, sl.issue_date
                              sl.is_companion, sl.companion_name, sl.companion_relation,
                              sl.is_paid, sl.payment_amount,
                              DATE_FORMAT(sl.deleted_at, '%Y-%m-%d %r') AS deleted_at,
-                             p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title,
+                             p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title, d.note AS doctor_note,
                              (SELECT COUNT(*) FROM leave_queries WHERE leave_id=sl.id) AS queries_count
                       FROM sick_leaves sl
                       JOIN patients p ON sl.patient_id=p.id
@@ -688,7 +700,7 @@ while ($r = $res->fetch_assoc()) {
 
 // ==== 13. جلب إشعارات المدفوعات ====
 $notifications_payment = [];
-$res = $conn->query("SELECT id, message, created_at, leave_id FROM notifications WHERE type='payment' ORDER BY created_at DESC");
+$res = $conn->query("SELECT n.id, n.message, n.created_at, n.leave_id, sl.payment_amount FROM notifications n LEFT JOIN sick_leaves sl ON n.leave_id=sl.id WHERE n.type='payment' ORDER BY n.created_at DESC");
 while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
 ?>
 <!DOCTYPE html>
@@ -1141,7 +1153,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
             <option value="">اختر طبيبًا</option>
             <?php foreach ($doctors as $d): ?>
               <option value="<?= $d['id'] ?>" data-name="<?= htmlspecialchars(strtolower($d['name'])) ?>"
-                data-title="<?= htmlspecialchars(strtolower($d['title'])) ?>">
+                data-title="<?= htmlspecialchars(strtolower($d['title'])) ?>" data-note="<?= htmlspecialchars(strtolower($d['note'] ?? '')) ?>">
                 <?= htmlspecialchars($d['name'] . ' - ' . $d['title']) ?>
               </option>
             <?php endforeach; ?>
@@ -1152,8 +1164,10 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
             placeholder="اسم الطبيب">
           <input type="text" name="doctor_manual_title" id="doctor_manual_title" class="form-control mt-1 hidden-field"
             placeholder="المسمى الوظيفي">
+          <textarea name="doctor_manual_note" id="doctor_manual_note" class="form-control mt-1 hidden-field" placeholder="ملاحظة"></textarea>
           <input type="text" id="doctor_saved_title" class="form-control mt-1 hidden-field" readonly
             placeholder="المسمى الوظيفي">
+          <textarea id="doctor_saved_note" class="form-control mt-1 hidden-field" readonly placeholder="ملاحظة"></textarea>
           <div class="invalid-feedback">أدخل اسم الطبيب ومسمّاه الوظيفي.</div>
           <div id="noDoctorResult" class="no-results mt-1" style="display:none;">
             لم يتم العثور على طبيب مطابق.
@@ -1275,6 +1289,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                 <th>الهوية</th>
                 <th>الطبيب</th>
                 <th>المسمى</th>
+                <th>الملاحظة</th>
                 <th>تاريخ الإصدار</th>
                 <th>من</th>
                 <th>إلى</th>
@@ -1298,6 +1313,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                   <td class="cell-identity"><?= htmlspecialchars($lv['identity_number']) ?></td>
                   <td class="cell-doctor"><?= htmlspecialchars($lv['doctor_name']) ?></td>
                   <td><?= htmlspecialchars($lv['doctor_title']) ?></td>
+                  <td><?= htmlspecialchars($lv['doctor_note']) ?></td>
                   <td class="cell-issue"><?= htmlspecialchars($lv['issue_date']) ?></td>
                   <td><?= htmlspecialchars($lv['start_date']) ?></td>
                   <td><?= htmlspecialchars($lv['end_date']) ?></td>
@@ -1323,7 +1339,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
               <?php endforeach; ?>
               <?php if (empty($leaves)): ?>
                 <tr class="no-results">
-                  <td colspan="16">لا توجد إجازات نشطة حاليًا.</td>
+                  <td colspan="17">لا توجد إجازات نشطة حاليًا.</td>
                 </tr>
               <?php endif; ?>
             </tbody>
@@ -1388,6 +1404,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                 <th>الهوية</th>
                 <th>الطبيب</th>
                 <th>المسمى</th>
+                <th>الملاحظة</th>
                 <th>تاريخ الإصدار</th>
                 <th>من</th>
                 <th>إلى</th>
@@ -1403,7 +1420,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
             <tbody>
               <?php if (empty($archived)): ?>
                 <tr class="no-results">
-                  <td colspan="16">لا توجد إجازات في الأرشيف.</td>
+                  <td colspan="17">لا توجد إجازات في الأرشيف.</td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($archived as $idx => $lv): ?>
@@ -1416,6 +1433,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                     <td class="cell-identity"><?= htmlspecialchars($lv['identity_number']) ?></td>
                     <td class="cell-doctor"><?= htmlspecialchars($lv['doctor_name']) ?></td>
                     <td><?= htmlspecialchars($lv['doctor_title']) ?></td>
+                    <td><?= htmlspecialchars($lv['doctor_note']) ?></td>
                     <td class="cell-issue"><?= htmlspecialchars($lv['issue_date']) ?></td>
                     <td><?= htmlspecialchars($lv['start_date']) ?></td>
                     <td><?= htmlspecialchars($lv['end_date']) ?></td>
@@ -1460,7 +1478,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
           </div>
           <ul id="notifPayments" class="list-group">
             <?php foreach ($notifications_payment as $n): ?>
-              <li class="list-group-item d-flex justify-content-between align-items-center" data-leave="<?= $n['leave_id'] ?>" data-id="<?= $n['id'] ?>">
+              <li class="list-group-item d-flex justify-content-between align-items-center" data-leave="<?= $n['leave_id'] ?>" data-id="<?= $n['id'] ?>" data-amount="<?= $n['payment_amount'] ?>">
                 <span><?= htmlspecialchars($n['message']) ?></span>
                 <div class="btn-group">
                   <button class="btn btn-info btn-sm btn-view-leave" data-leave="<?= $n['leave_id'] ?>">تفاصيل</button>
@@ -1654,6 +1672,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                   <th>رقم</th>
                   <th>الاسم</th>
                   <th>المسمى</th>
+                  <th>الملاحظة</th>
                   <th>تحكم</th>
                 </tr>
               </thead>
@@ -1663,6 +1682,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                     <td class="row-num"></td>
                     <td><?= htmlspecialchars($d['name']) ?></td>
                     <td><?= htmlspecialchars($d['title']) ?></td>
+                    <td><?= htmlspecialchars($d['note']) ?></td>
                     <td>
                       <button class="btn btn-warning btn-sm action-btn btn-edit-doctor"><i
                           class="bi bi-pencil-square"></i> تعديل</button>
@@ -1673,7 +1693,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                 <?php endforeach; ?>
                 <?php if (empty($doctors)): ?>
                   <tr class="no-results">
-                    <td colspan="4">لا يوجد أطباء حاليًا.</td>
+                    <td colspan="5">لا يوجد أطباء حاليًا.</td>
                   </tr>
                 <?php endif; ?>
               </tbody>
@@ -1682,17 +1702,20 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
           <form class="row g-2 mt-3 needs-validation" id="doctorForm" style="display:none;" novalidate>
             <?= csrf_input(); ?>
             <input type="hidden" id="doctor_form_id" name="doctor_id">
-            <div class="col-md-5">
+            <div class="col-md-4">
               <input type="text" id="doctor_form_name" name="doctor_name" class="form-control" placeholder="اسم الطبيب"
                 required>
               <div class="invalid-feedback">أدخل اسم الطبيب.</div>
             </div>
-            <div class="col-md-5">
+            <div class="col-md-4">
               <input type="text" id="doctor_form_title" name="doctor_title" class="form-control"
                 placeholder="المسمى الوظيفي" required>
               <div class="invalid-feedback">أدخل المسمى الوظيفي.</div>
             </div>
-            <div class="col-md-2 d-flex gap-1">
+            <div class="col-md-4">
+              <input type="text" id="doctor_form_note" name="doctor_note" class="form-control" placeholder="ملاحظة">
+            </div>
+            <div class="col-md-12 d-flex gap-1">
               <button type="submit" class="btn btn-success-custom w-100"><i class="bi bi-save-fill"></i> حفظ</button>
               <button type="button" class="btn btn-secondary w-100" id="btn-cancel-doctor"><i
                   class="bi bi-x-circle"></i> إلغاء</button>
@@ -1795,6 +1818,10 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
             <div class="col-md-3">
               <label>الطبيب</label>
               <input type="text" id="doctor_edit" class="form-control" readonly>
+            </div>
+            <div class="col-md-3">
+              <label>ملاحظة الطبيب</label>
+              <input type="text" id="doctor_note_edit" class="form-control" readonly>
             </div>
             <div class="col-md-3">
               <label>بداية الإجازة</label>
@@ -2095,11 +2122,12 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
           Array.from(sel.options).forEach(opt => {
             const valName = opt.getAttribute('data-name') || '';
             const valExtra = opt.getAttribute('data-identity') || opt.getAttribute('data-title') || '';
+            const valNote = opt.getAttribute('data-note') || '';
             if (opt.value === 'manual') {
               opt.style.display = '';
               return;
             }
-            if (valName.includes(text) || valExtra.includes(text)) {
+            if (valName.includes(text) || valExtra.includes(text) || valNote.includes(text)) {
               opt.style.display = '';
               anyMatch = true;
             } else {
@@ -2171,6 +2199,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                 if (row) {
                   row.children[1].textContent = d.name;
                   row.children[2].textContent = d.title;
+                  row.children[3].textContent = d.note ?? '';
                 }
               } else {
                 const newRow = document.createElement('tr');
@@ -2179,6 +2208,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                   <td class="row-num"></td>
                   <td>${d.name}</td>
                   <td>${d.title}</td>
+                  <td>${d.note ?? ''}</td>
                   <td>
                     <button class="btn btn-warning btn-sm action-btn btn-edit-doctor"><i class="bi bi-pencil-square"></i> تعديل</button>
                     <button class="btn btn-danger btn-sm action-btn btn-delete-doctor"><i class="bi bi-trash-fill"></i> حذف</button>
@@ -2202,6 +2232,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
           document.getElementById('doctor_form_id').value = id;
           document.getElementById('doctor_form_name').value = row.children[1].textContent.trim();
           document.getElementById('doctor_form_title').value = row.children[2].textContent.trim();
+          document.getElementById('doctor_form_note').value = row.children[3].textContent.trim();
           doctorForm.style.display = 'flex';
           doctorForm.classList.remove('was-validated');
         });
@@ -2286,7 +2317,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
           reIndexTable(tableId);
         });
       }
-      filterTable('doctorsTable', 'searchDoctorsTable', 'btn-search-doctors', [1, 2]);
+      filterTable('doctorsTable', 'searchDoctorsTable', 'btn-search-doctors', [1, 2, 3]);
 
       // ==== 19. إدارة المرضى ====
       const btnShowAddPatient = document.getElementById('btn-show-add-patient');
@@ -2440,6 +2471,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                 <td class="cell-identity">${lv.identity_number}</td>
                 <td class="cell-doctor">${lv.doctor_name}</td>
                 <td>${lv.doctor_title}</td>
+                <td>${lv.doctor_note}</td>
                 <td class="cell-issue">${lv.issue_date}</td>
                 <td>${lv.start_date}</td>
                 <td>${lv.end_date}</td>
@@ -2494,30 +2526,42 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
       const doctorSelect = document.getElementById('doctor_select');
       const dManualName = document.getElementById('doctor_manual_name');
       const dManualTitle = document.getElementById('doctor_manual_title');
+      const dManualNote = document.getElementById('doctor_manual_note');
       const dSavedTitle = document.getElementById('doctor_saved_title');
+      const dSavedNote = document.getElementById('doctor_saved_note');
       doctorSelect.addEventListener('change', () => {
         const val = doctorSelect.value;
         const isMan = val === 'manual';
         if (isMan) {
           dManualName.classList.remove('hidden-field');
           dManualTitle.classList.remove('hidden-field');
+          dManualNote.classList.remove('hidden-field');
           dSavedTitle.classList.add('hidden-field');
+          dSavedNote.classList.add('hidden-field');
           dManualName.required = true;
           dManualTitle.required = true;
+          dManualNote.required = false;
         } else {
           dManualName.classList.add('hidden-field');
           dManualTitle.classList.add('hidden-field');
+          dManualNote.classList.add('hidden-field');
           dManualName.required = false;
           dManualTitle.required = false;
+          dManualNote.required = false;
           dManualName.value = '';
           dManualTitle.value = '';
+          dManualNote.value = '';
           if (val) {
             const selected = doctorSelect.options[doctorSelect.selectedIndex];
             dSavedTitle.value = selected.getAttribute('data-title');
+            dSavedNote.value = selected.getAttribute('data-note') || '';
             dSavedTitle.classList.remove('hidden-field');
+            dSavedNote.classList.remove('hidden-field');
           } else {
             dSavedTitle.classList.add('hidden-field');
             dSavedTitle.value = '';
+            dSavedNote.classList.add('hidden-field');
+            dSavedNote.value = '';
           }
         }
       });
@@ -2692,15 +2736,16 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
         const cells = row.children;
         document.getElementById('leave_id_edit').value = id;
         document.getElementById('service_code_edit').value = cells[1].textContent.trim();
-        document.getElementById('issue_date_edit').value = cells[6].textContent.trim();
+        document.getElementById('issue_date_edit').value = cells[7].textContent.trim();
         document.getElementById('patient_edit').value = cells[2].textContent.trim();
         document.getElementById('doctor_edit').value = cells[4].textContent.trim();
-        document.getElementById('start_date_edit').value = cells[7].textContent.trim();
-        document.getElementById('end_date_edit').value = cells[8].textContent.trim();
-       document.getElementById('days_count_edit').value = cells[9].textContent.trim();
+        document.getElementById('doctor_note_edit').value = cells[6].textContent.trim();
+        document.getElementById('start_date_edit').value = cells[8].textContent.trim();
+        document.getElementById('end_date_edit').value = cells[9].textContent.trim();
+       document.getElementById('days_count_edit').value = cells[10].textContent.trim();
 
-        document.getElementById('is_paid_edit').checked = cells[13].textContent.trim() === 'نعم';
-        document.getElementById('payment_amount_edit').value = cells[14].textContent.trim();
+        document.getElementById('is_paid_edit').checked = cells[14].textContent.trim() === 'نعم';
+        document.getElementById('payment_amount_edit').value = cells[15].textContent.trim();
 
         // تعبئة بيانات المرافق في التعديل
         const isCBox = document.getElementById('is_companion_edit');
@@ -2708,7 +2753,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
         const compRelInput = document.getElementById('companion_relation_edit');
         const compName = row.getAttribute('data-comp-name');
         const compRel = row.getAttribute('data-comp-rel');
-        if (cells[10].querySelector('.badge.bg-warning')) {
+        if (cells[11].querySelector('.badge.bg-warning')) {
           isCBox.checked = true;
           document.querySelectorAll('.companion-fields-edit').forEach(el => el.classList.remove('hidden-field'));
           compNameInput.value = compName;
@@ -2784,21 +2829,22 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
               const row = document.querySelector(`#leavesTable tr[data-id="${lv.id}"]`);
               if (row) {
                 row.children[1].textContent = lv.service_code;
-                row.children[6].textContent = lv.issue_date;
-                row.children[7].textContent = lv.start_date;
-                row.children[8].textContent = lv.end_date;
-                row.children[9].textContent = lv.days_count;
+                row.children[7].textContent = lv.issue_date;
+                row.children[8].textContent = lv.start_date;
+                row.children[9].textContent = lv.end_date;
+                row.children[10].textContent = lv.days_count;
                 if (lv.is_companion) {
-                  row.children[10].innerHTML = '<span class="badge bg-warning text-dark">مرافق</span>';
+                  row.children[11].innerHTML = '<span class="badge bg-warning text-dark">مرافق</span>';
                   row.setAttribute('data-comp-name', lv.companion_name);
                   row.setAttribute('data-comp-rel', lv.companion_relation);
                 } else {
-                  row.children[10].innerHTML = '<span class="badge bg-info text-dark">أساسي</span>';
+                  row.children[11].innerHTML = '<span class="badge bg-info text-dark">أساسي</span>';
                   row.setAttribute('data-comp-name', '');
                   row.setAttribute('data-comp-rel', '');
                 }
-                row.children[13].textContent = lv.is_paid ? 'نعم' : 'لا';
-                row.children[14].textContent = parseFloat(lv.payment_amount).toFixed(2);
+                row.children[6].textContent = lv.doctor_note;
+                row.children[14].textContent = lv.is_paid ? 'نعم' : 'لا';
+                row.children[15].textContent = parseFloat(lv.payment_amount).toFixed(2);
               }
               editLeaveModal.hide();
               reIndexTable('leavesTable');
@@ -2915,8 +2961,8 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
       });
 
       // ==== 38. البحث في الجداول بواسطة الأزرار ==== 
-      filterTable('leavesTable', 'searchLeaves', 'btn-search-leaves', [1, 2, 4]);
-      filterTable('archivedTable', 'searchArchived', 'btn-search-archived', [1, 2, 4]);
+      filterTable('leavesTable', 'searchLeaves', 'btn-search-leaves', [1, 2, 4, 6]);
+      filterTable('archivedTable', 'searchArchived', 'btn-search-archived', [1, 2, 4, 6]);
       filterTable('queriesTable', 'searchQueries', 'btn-search-queries', [1, 2, 4]);
       filterTable('paymentsTable', 'searchPayments', 'btn-search-payments', [1]);
 
@@ -3092,6 +3138,9 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
       function showLeaveDetails(id){
         const row = document.querySelector(`#leavesTable tr[data-id="${id}"]`) || document.querySelector(`#archivedTable tr[data-id="${id}"]`);
         if(!row) return;
+        row.scrollIntoView({behavior:'smooth', block:'center'});
+        row.classList.add('table-warning');
+        setTimeout(()=>row.classList.remove('table-warning'),2000);
         const table = row.closest('table');
         const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent);
         let html = '<div class="table-responsive"><table class="table table-bordered text-center"><thead><tr>';
@@ -3175,13 +3224,18 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
         });
         document.querySelectorAll('#notifPayments .btn-pay-notif').forEach(btn => {
           btn.onclick = () => {
-            const lid = btn.getAttribute('data-leave');
+            const li = btn.closest('li');
+            const lid = li.getAttribute('data-leave');
+            let amount = li.getAttribute('data-amount') || '0';
+            const val = prompt('تأكيد مبلغ الدفع', amount);
+            if(val === null) return;
+            amount = parseFloat(val) || 0;
             const fd = new FormData();
             fd.append('action', 'mark_leave_paid');
             fd.append('leave_id', lid);
-            fd.append('amount', 0);
+            fd.append('amount', amount);
             fd.append('csrf_token', '<?= $_SESSION["csrf_token"] ?>');
-            fetch('', {method:'POST', body: fd}).then(r=>r.json()).then(res=>{ if(res.success){ btn.closest('li').remove(); }});
+            fetch('', {method:'POST', body: fd}).then(r=>r.json()).then(res=>{ if(res.success){ li.remove(); showAlert('success','تم التحديث'); }});
           };
         });
         document.querySelectorAll('#notifPayments .btn-view-leave').forEach(btn => {
@@ -3207,10 +3261,12 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
               li.className = 'list-group-item d-flex justify-content-between align-items-center';
               li.setAttribute('data-leave', n.leave_id);
               li.setAttribute('data-id', n.id);
+              li.setAttribute("data-amount", n.payment_amount);
               li.innerHTML = `<span>${n.message}</span><div class="btn-group"><button class="btn btn-info btn-sm btn-view-leave" data-leave="${n.leave_id}">تفاصيل</button><button class="btn btn-success btn-sm btn-pay-notif" data-leave="${n.leave_id}">مدفوعة</button><button class="btn btn-danger btn-sm btn-del-notif" data-id="${n.id}">حذف</button></div>`;
               ul.appendChild(li);
             });
             attachNotifHandlers();
+            showAlert('success','تم التحديث');
           }
         });
       });
