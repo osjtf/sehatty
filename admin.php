@@ -3320,7 +3320,7 @@ $notifications_payment = [];
             fd.append('action','delete_notification');
             fd.append('notification_id',id);
             fd.append('csrf_token','<?= $_SESSION["csrf_token"] ?>');
-            fetch('',{method:'POST',body:fd}).then(r=>r.json()).then(res=>{ if(res.success){ del.closest('li').remove(); }});
+            fetch('',{method:'POST',body:fd}).then(r=>r.json()).then(res=>{ if(res.success){ del.closest('li').remove(); showAlert('success','تم الحذف'); }});
           } else if (pay) {
             const li = pay.closest('li');
             fd.append('action','mark_leave_paid');
