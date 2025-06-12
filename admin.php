@@ -3369,3 +3369,10 @@ $notifications_payment = [];
             data:{labels:months,datasets:[{label:'عدد الإجازات',data:d.monthly,backgroundColor:'#64b5f6'}]},
             options:{scales:{y:{beginAtZero:true}}}
           });
+        }); // 1) close fetch.then callback
+      });   // 2) close refreshNotifs event handler
+
+    });    // 3) close DOMContentLoaded handler
+  </script>
+</body>
+</html>
