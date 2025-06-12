@@ -51,6 +51,12 @@ function check_csrf()
     }
   }
 }
+
+// دالة مساعدة لتحويل القيم النصية مع التعامل مع null
+function e(string|null $s): string
+{
+  return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8');
+}
 check_csrf();
 
 // ==== 3. اتصال MySQL (قاعدة البيانات الرئيسية) ====
@@ -1208,9 +1214,9 @@ $notifications_payment = [];
               <option value="<?= $d['id'] ?>" data-name="<?= htmlspecialchars(strtolower($d['name'])) ?>"
                 data-title="<?= htmlspecialchars(strtolower($d['title'])) ?>" data-note="<?= htmlspecialchars(strtolower($d['note'] ?? '')) ?>">
                 <?= htmlspecialchars($d['name'] . ' - ' . $d['title']) ?>
-              </option>
-            <?php endforeach; ?>
-            <option value="manual">إدخال يدوي</option>
+              <option value="<?= $d['id'] ?>" data-name="<?= e(strtolower($d['name'])) ?>"
+                data-title="<?= e(strtolower($d['title'])) ?>" data-note="<?= e(strtolower($d['note'] ?? '')) ?>">
+                <?= e($d['name'] . ' - ' . $d['title']) ?>
           </select>
           <div class="invalid-feedback">اختر طبيبًا أو ادخله يدويًا.</div>
           <input type="text" name="doctor_manual_name" id="doctor_manual_name" class="form-control mt-2 hidden-field"
@@ -1361,12 +1367,12 @@ $notifications_payment = [];
                     data-comp-name="<?= htmlspecialchars($lv['companion_name']) ?>"
                     data-comp-rel="<?= htmlspecialchars($lv['companion_relation']) ?>">
                 <tr data-id="<?= $lv['id'] ?>" data-patient="<?= $lv['patient_id'] ?>"
-                    data-comp-name="<?= htmlspecialchars($lv['companion_name'] ?? '') ?>"
-                    data-comp-rel="<?= htmlspecialchars($lv['companion_relation'] ?? '') ?>">
+                    data-comp-name="<?= e($lv['companion_name'] ?? '') ?>"
+                    data-comp-rel="<?= e($lv['companion_relation'] ?? '') ?>">
                   <td class="cell-identity"><?= htmlspecialchars($lv['identity_number']) ?></td>
-                  <td><?= htmlspecialchars($lv['doctor_note'] ?? '') ?></td>
-                  <td><?= htmlspecialchars($lv['doctor_title']) ?></td>
-                  <td><?= htmlspecialchars($lv['doctor_note']) ?></td>
+                  <td class="cell-doctor"><?= e($lv['doctor_name']) ?></td>
+                  <td><?= e($lv['doctor_title']) ?></td>
+                  <td><?= e($lv['doctor_note'] ?? '') ?></td>
                   <td class="cell-issue"><?= htmlspecialchars($lv['issue_date']) ?></td>
                   <td><?= htmlspecialchars($lv['start_date']) ?></td>
                   <td><?= htmlspecialchars($lv['end_date']) ?></td>
@@ -1484,10 +1490,10 @@ $notifications_payment = [];
                     <td class="cell-service"><?= htmlspecialchars(strtoupper($lv['service_code'])) ?></td>
                     <td class="cell-patient"><?= htmlspecialchars($lv['patient_name']) ?></td>
                     <td class="cell-identity"><?= htmlspecialchars($lv['identity_number']) ?></td>
-                    <td><?= htmlspecialchars($lv['doctor_note'] ?? '') ?></td>
-                    <td><?= htmlspecialchars($lv['doctor_title']) ?></td>
-                    <td><?= htmlspecialchars($lv['doctor_note']) ?></td>
-                    <td class="cell-issue"><?= htmlspecialchars($lv['issue_date']) ?></td>
+                    <td class="cell-doctor"><?= e($lv['doctor_name']) ?></td>
+                    <td><?= e($lv['doctor_title']) ?></td>
+                    <td><?= e($lv['doctor_note'] ?? '') ?></td>
+                <span><?= e($n['message']) ?></span>
                     <td><?= htmlspecialchars($lv['start_date']) ?></td>
                     <td><?= htmlspecialchars($lv['end_date']) ?></td>
                     <td><?= htmlspecialchars($lv['days_count']) ?></td>
@@ -1732,9 +1738,9 @@ $notifications_payment = [];
               <tbody>
                 <?php foreach ($doctors as $idx => $d): ?>
                   <tr data-id="<?= $d['id'] ?>">
-                    <td class="row-num"></td>
-                    <td><?= htmlspecialchars($d['name']) ?></td>
-                      <td><?= htmlspecialchars($d['note'] ?? '') ?></td>
+                    <td><?= e($d['name']) ?></td>
+                    <td><?= e($d['title']) ?></td>
+                      <td><?= e($d['note'] ?? '') ?></td>
                     <td><?= htmlspecialchars($d['note']) ?></td>
                     <td>
                       <button class="btn btn-warning btn-sm action-btn btn-edit-doctor"><i
