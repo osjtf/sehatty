@@ -21,8 +21,7 @@ session_set_cookie_params([
   'path' => '/',
   'httponly' => true,
   'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
-  // تعزيز الأمان لمنع هجمات CSRF عبر SameSite
-  'samesite' => 'Strict'
+  'samesite' => 'Lax'
 ]);
 session_start();
 if (empty($_SESSION['admin_id'])) {
@@ -54,12 +53,6 @@ function check_csrf()
 }
 check_csrf();
 
-// دالة بسيطة لتنظيف مدخلات المستخدم من الوسوم الضارة
-function clean($str)
-{
-  return trim(strip_tags($str));
-}
-
 // ==== 3. اتصال MySQL (قاعدة البيانات الرئيسية) ====
 $db_host = 'ocvwlym0zv3tcn68.cbetxkdyhwsb.us-east-1.rds.amazonaws.com';
 $db_user = 'smrg7ak77778emkb';
@@ -86,8 +79,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS doctors (
   note VARCHAR(255) DEFAULT NULL
 ) ENGINE=InnoDB CHARSET=utf8mb4");
 
-// تأكد من وجود عمود الملاحظة في حالة الترقيات القديمة
-$conn->query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS note VARCHAR(255) DEFAULT NULL");
+
 
 $conn->query("CREATE TABLE IF NOT EXISTS sick_leaves (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -183,9 +175,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
   // ==== 6.1 إدارة الأطباء ====
   if ($action === 'add_doctor') {
-    $dname = clean($_POST['doctor_name']);
-    $dtitle = clean($_POST['doctor_title']);
-    $dnote = clean($_POST['doctor_note'] ?? '');
+    $dname = trim($_POST['doctor_name']);
+    $dtitle = trim($_POST['doctor_title']);
+    $dnote = trim($_POST['doctor_note'] ?? '');
     if (!$dname || !$dtitle) {
       echo json_encode(['success' => false, 'message' => 'أدخل اسم الطبيب والمسمى الوظيفي']);
       exit;
@@ -197,9 +189,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   }
   if ($action === 'edit_doctor') {
     $did = intval($_POST['doctor_id']);
-    $dname = clean($_POST['doctor_name']);
-    $dtitle = clean($_POST['doctor_title']);
-    $dnote = clean($_POST['doctor_note'] ?? '');
+    $dname = trim($_POST['doctor_name']);
+    $dtitle = trim($_POST['doctor_title']);
+    $dnote = trim($_POST['doctor_note'] ?? '');
     $stmt = $conn->prepare("UPDATE doctors SET name=?, title=?, note=? WHERE id=?");
     $stmt->bind_param("sssi", $dname, $dtitle, $dnote, $did);
     $stmt->execute();
@@ -217,8 +209,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
   // ==== 6.2 إدارة المرضى ====
   if ($action === 'add_patient') {
-    $pname = clean($_POST['patient_name']);
-    $pident = clean($_POST['identity_number']);
+    $pname = trim($_POST['patient_name']);
+    $pident = trim($_POST['identity_number']);
     if (!$pname || !$pident) {
       echo json_encode(['success' => false, 'message' => 'أدخل اسم المريض ورقم الهوية']);
       exit;
@@ -230,8 +222,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   }
   if ($action === 'edit_patient') {
     $pid = intval($_POST['patient_id']);
-    $pname = clean($_POST['patient_name']);
-    $pident = clean($_POST['identity_number']);
+    $pname = trim($_POST['patient_name']);
+    $pident = trim($_POST['identity_number']);
     $stmt = $conn->prepare("UPDATE patients SET name=?, identity_number=? WHERE id=?");
     $stmt->bind_param("ssi", $pname, $pident, $pid);
     $stmt->execute();
@@ -251,8 +243,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   if ($action === 'add_leave') {
     // ===== 6.3.1 حصلنا على المريض =====
     if ($_POST['patient_select'] === 'manual') {
-      $pm_name = clean($_POST['patient_manual_name']);
-      $pm_id = clean($_POST['patient_manual_id']);
+      $pm_name = trim($_POST['patient_manual_name']);
+      $pm_id = trim($_POST['patient_manual_id']);
       if (!$pm_name || !$pm_id) {
         echo json_encode(['success' => false, 'message' => 'أدخل اسم المريض ورقم هويته']);
         exit;
@@ -268,9 +260,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     // ===== 6.3.2 حصلنا على الطبيب =====
     if ($_POST['doctor_select'] === 'manual') {
-      $dm_name = clean($_POST['doctor_manual_name']);
-      $dm_title = clean($_POST['doctor_manual_title']);
-      $dm_note = clean($_POST['doctor_manual_note'] ?? '');
+      $dm_name = trim($_POST['doctor_manual_name']);
+      $dm_title = trim($_POST['doctor_manual_title']);
+      $dm_note = trim($_POST['doctor_manual_note'] ?? '');
       if (!$dm_name || !$dm_title) {
         echo json_encode(['success' => false, 'message' => 'أدخل اسم الطبيب ومسمّاه الوظيفي']);
         exit;
@@ -585,14 +577,6 @@ if (trim($_POST['service_code_manual']) !== '') {
     exit;
   }
 
-  if ($action === 'fetch_archived') {
-    $arr = [];
-    $res = $conn->query("SELECT sl.id, sl.patient_id, sl.service_code, sl.issue_date, sl.start_date, sl.end_date, sl.days_count, sl.is_companion, sl.companion_name, sl.companion_relation, sl.is_paid, sl.payment_amount, DATE_FORMAT(sl.deleted_at, '%Y-%m-%d %r') AS deleted_at, p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title, d.note AS doctor_note, (SELECT COUNT(*) FROM leave_queries WHERE leave_id=sl.id) AS queries_count FROM sick_leaves sl JOIN patients p ON sl.patient_id=p.id JOIN doctors d ON sl.doctor_id=d.id WHERE sl.is_deleted=1 ORDER BY sl.deleted_at DESC");
-    while ($row = $res->fetch_assoc()) { $arr[] = $row; }
-    echo json_encode(['success' => true, 'data' => $arr]);
-    exit;
-  }
-
   echo json_encode(['success' => false, 'message' => 'إجراء غير معروف']);
   exit;
 }
@@ -673,8 +657,22 @@ while ($row = $res->fetch_assoc()) {
   $leaves[] = $row;
 }
 
-// ==== 10. بيانات الأرشيف ستُجلب عند الطلب (Lazy Loading) ====
+// ==== 10. جلب بيانات الأرشيف (الإجازات المحذوفة) ====
 $archived = [];
+$res = $conn->query("SELECT sl.id, sl.patient_id, sl.service_code, sl.issue_date, sl.start_date, sl.end_date, sl.days_count,
+                             sl.is_companion, sl.companion_name, sl.companion_relation,
+                             sl.is_paid, sl.payment_amount,
+                             DATE_FORMAT(sl.deleted_at, '%Y-%m-%d %r') AS deleted_at,
+                             p.name AS patient_name, p.identity_number, d.name AS doctor_name, d.title AS doctor_title, d.note AS doctor_note,
+                             (SELECT COUNT(*) FROM leave_queries WHERE leave_id=sl.id) AS queries_count
+                      FROM sick_leaves sl
+                      JOIN patients p ON sl.patient_id=p.id
+                      JOIN doctors d ON sl.doctor_id=d.id
+                      WHERE sl.is_deleted=1
+                      ORDER BY sl.deleted_at DESC");
+while ($row = $res->fetch_assoc()) {
+  $archived[] = $row;
+}
 
 // ==== 11. جلب سجلات الاستعلامات للإجازات النشطة (للجدول الفرعي) ====
 $queries = [];
@@ -960,19 +958,6 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
       display: none;
     }
 
-    /* شكل تحميل مؤقت للسجلات */
-    .skeleton {
-      background: linear-gradient(90deg, #eee, #f8f8f8, #eee);
-      background-size: 200% 100%;
-      animation: skeleton-loading 1s infinite linear;
-      color: transparent;
-    }
-
-    @keyframes skeleton-loading {
-      0% { background-position: 200% 0; }
-      100% { background-position: -200% 0; }
-    }
-
     /* حركة FadeIn خفيفة */
     @keyframes fadeIn {
       from {
@@ -1002,7 +987,7 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
 </head>
 <body>
   <!-- زر تبديل الوضع الداكن/الفاتح -->
-  <button id="darkModeToggle" data-bs-toggle="tooltip" title="تبديل الوضع الداكن"><i class="bi bi-moon-fill"></i> داكن</button>
+  <button id="darkModeToggle"><i class="bi bi-moon-fill"></i> داكن</button>
 
   <!-- حاوية الإشعارات (Toast-like) -->
   <div id="alert-container"></div>
@@ -1088,34 +1073,21 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
       </button>
     </div>
 
-    <!-- قائمة الوصول السريع (قابلة للطي على الشاشات الصغيرة) -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light rounded mb-2">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="#">لوحة التحكم</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#quickActions" aria-controls="quickActions" aria-expanded="false" aria-label="قائمة">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse justify-content-end" id="quickActions">
-          <div class="navbar-nav gap-2">
-            <button class="btn btn-gradient btn-sm" data-bs-toggle="modal" data-bs-target="#doctorsModal">
-              <i class="bi bi-person-badge-fill"></i> إدارة الأطباء
-            </button>
-            <button class="btn btn-gradient btn-sm" data-bs-toggle="modal" data-bs-target="#patientsModal">
-              <i class="bi bi-person-lines-fill"></i> إدارة المرضى
-            </button>
-            <button class="btn btn-gradient btn-sm" data-bs-toggle="collapse" data-bs-target="#queriesSection">
-              <i class="bi bi-journal-text"></i> سجل الاستعلامات
-            </button>
-            <button class="btn btn-gradient btn-sm" data-bs-toggle="collapse" data-bs-target="#paymentsSection">
-              <i class="bi bi-cash"></i> المدفوعات
-            </button>
-            <button class="btn btn-gradient btn-sm" data-bs-toggle="collapse" data-bs-target="#archivedSection">
-              <i class="bi bi-archive"></i> الأرشيف
-            </button>
-          </div>
-        </div>
-      </div>
-    </nav>
+    <!-- أزرار الوصول السريع (الأطباء، المرضى، سجل الاستعلامات) -->
+    <div class="mb-2 d-flex gap-2 justify-content-end flex-wrap">
+      <button class="btn btn-gradient btn-sm" data-bs-toggle="modal" data-bs-target="#doctorsModal">
+        <i class="bi bi-person-badge-fill"></i> إدارة الأطباء
+      </button>
+      <button class="btn btn-gradient btn-sm" data-bs-toggle="modal" data-bs-target="#patientsModal">
+        <i class="bi bi-person-lines-fill"></i> إدارة المرضى
+      </button>
+      <button class="btn btn-gradient btn-sm" data-bs-toggle="collapse" data-bs-target="#queriesSection">
+        <i class="bi bi-journal-text"></i> سجل الاستعلامات
+      </button>
+      <button class="btn btn-gradient btn-sm" data-bs-toggle="collapse" data-bs-target="#paymentsSection">
+        <i class="bi bi-cash"></i> المدفوعات
+      </button>
+    </div>
 
     <!-- بطاقة إضافة إجازة مرضية -->
     <div class="card card-custom p-3">
@@ -1356,11 +1328,11 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                   <td><?= $lv['is_paid'] ? 'نعم' : 'لا' ?></td>
                   <td><?= number_format($lv['payment_amount'], 2) ?></td>
                   <td>
-                    <button class="btn btn-info btn-sm action-btn btn-edit-leave" data-bs-toggle="tooltip" title="تعديل الإجازة"><i class="bi bi-pencil-square"></i>
+                    <button class="btn btn-info btn-sm action-btn btn-edit-leave"><i class="bi bi-pencil-square"></i>
                       تعديل</button>
-                    <button class="btn btn-danger btn-sm action-btn btn-delete-leave" data-bs-toggle="tooltip" title="نقل للأرشيف"><i class="bi bi-trash-fill"></i>
+                    <button class="btn btn-danger btn-sm action-btn btn-delete-leave"><i class="bi bi-trash-fill"></i>
                       أرشفة</button>
-                    <button class="btn btn-warning btn-sm action-btn btn-view-queries" data-bs-toggle="tooltip" title="عرض الاستعلامات"><i class="bi bi-journal-text"></i>
+                    <button class="btn btn-warning btn-sm action-btn btn-view-queries"><i class="bi bi-journal-text"></i>
                       استعلامات</button>
                   </td>
                 </tr>
@@ -1377,7 +1349,6 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
     </div>
 
     <!-- جدول الأرشيف -->
-    <div class="collapse" id="archivedSection">
     <div class="card card-custom mt-4 mb-5">
       <div class="card-header d-flex justify-content-between align-items-center"
         style="background: var(--danger-color); color: #fff; border-radius: var(--border-radius) var(--border-radius) 0 0;">
@@ -1447,8 +1418,12 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
               </tr>
             </thead>
             <tbody>
-              <tr class="skeleton" id="archivedSkeleton"><td colspan="17">&nbsp;</td></tr>
-              <?php foreach ($archived as $idx => $lv): ?>
+              <?php if (empty($archived)): ?>
+                <tr class="no-results">
+                  <td colspan="17">لا توجد إجازات في الأرشيف.</td>
+                </tr>
+              <?php else: ?>
+                <?php foreach ($archived as $idx => $lv): ?>
                   <tr data-id="<?= $lv['id'] ?>" data-patient="<?= $lv['patient_id'] ?>"
                       data-comp-name="<?= htmlspecialchars($lv['companion_name']) ?>"
                       data-comp-rel="<?= htmlspecialchars($lv['companion_relation']) ?>">
@@ -1473,15 +1448,16 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
                     <td><?= $lv['is_paid'] ? 'نعم' : 'لا' ?></td>
                     <td><?= number_format($lv['payment_amount'], 2) ?></td>
                     <td>
-                      <button class="btn btn-success btn-sm action-btn btn-restore-leave" data-bs-toggle="tooltip" title="استعادة الإجازة"><i
+                      <button class="btn btn-success btn-sm action-btn btn-restore-leave"><i
                           class="bi bi-arrow-counterclockwise"></i> استعادة</button>
-                      <button class="btn btn-danger btn-sm action-btn btn-force-delete-leave" data-bs-toggle="tooltip" title="حذف نهائي"><i class="bi bi-x-circle"></i>
+                      <button class="btn btn-danger btn-sm action-btn btn-force-delete-leave"><i class="bi bi-x-circle"></i>
                         حذف نهائي</button>
-                      <button class="btn btn-warning btn-sm action-btn btn-view-queries" data-bs-toggle="tooltip" title="عرض الاستعلامات"><i class="bi bi-journal-text"></i>
+                      <button class="btn btn-warning btn-sm action-btn btn-view-queries"><i class="bi bi-journal-text"></i>
                         استعلامات</button>
                     </td>
                   </tr>
                 <?php endforeach; ?>
+              <?php endif; ?>
             </tbody>
           </table>
         </div>
@@ -1505,9 +1481,9 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
               <li class="list-group-item d-flex justify-content-between align-items-center" data-leave="<?= $n['leave_id'] ?>" data-id="<?= $n['id'] ?>" data-amount="<?= $n['payment_amount'] ?>">
                 <span><?= htmlspecialchars($n['message']) ?></span>
                 <div class="btn-group">
-                  <button class="btn btn-info btn-sm btn-view-leave" data-bs-toggle="tooltip" title="عرض الإجازة" data-leave="<?= $n['leave_id'] ?>">تفاصيل</button>
-                  <button class="btn btn-success btn-sm btn-pay-notif" data-bs-toggle="tooltip" title="تأكيد الدفع" data-leave="<?= $n['leave_id'] ?>">مدفوعة</button>
-                  <button class="btn btn-danger btn-sm btn-del-notif" data-bs-toggle="tooltip" title="حذف الإشعار" data-id="<?= $n['id'] ?>">حذف</button>
+                  <button class="btn btn-info btn-sm btn-view-leave" data-leave="<?= $n['leave_id'] ?>">تفاصيل</button>
+                  <button class="btn btn-success btn-sm btn-pay-notif" data-leave="<?= $n['leave_id'] ?>">مدفوعة</button>
+                  <button class="btn btn-danger btn-sm btn-del-notif" data-id="<?= $n['id'] ?>">حذف</button>
                 </div>
               </li>
             <?php endforeach; ?>
@@ -1914,10 +1890,6 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      // تفعيل التلميحات للرموز
-      new bootstrap.Tooltip(document.body, {
-        selector: '[data-bs-toggle="tooltip"]'
-      });
       // ===== دالة عرض الإشعار (Toast-like) =====
       function showAlert(type, message) {
         const toastId = 'toast-' + Date.now();
@@ -2997,61 +2969,8 @@ while ($row = $res->fetch_assoc()) { $notifications_payment[] = $row; }
       // ==== 39. الفرز حسب الأحدث/الأقدم/إعادة الترتيب الإفتراضي ==== 
       // نحتفظ بالصفوف الأصلية لكل جدول
       const originalLeavesRows = Array.from(document.querySelectorAll('#leavesTable tbody tr'));
-      const originalArchivedRows = [];
-      let archLoaded = false;
+      const originalArchivedRows = Array.from(document.querySelectorAll('#archivedTable tbody tr'));
       const originalQueriesRows = Array.from(document.querySelectorAll('#queriesTable tbody tr'));
-
-      const archivedSection = document.getElementById('archivedSection');
-      archivedSection.addEventListener('show.bs.collapse', () => {
-        if (archLoaded) return;
-        const tbody = document.querySelector('#archivedTable tbody');
-        tbody.innerHTML = '<tr class="skeleton"><td colspan="17">&nbsp;</td></tr>';
-        const fd = new FormData();
-        fd.append('action','fetch_archived');
-        fd.append('csrf_token','<?= $_SESSION["csrf_token"] ?>');
-        fetch('', {method:'POST', body: fd})
-          .then(r => r.json())
-          .then(res => {
-            if(res.success){
-              tbody.innerHTML = '';
-              res.data.forEach(lv => {
-                const tr = document.createElement('tr');
-                tr.setAttribute('data-id', lv.id);
-                tr.setAttribute('data-patient', lv.patient_id);
-                tr.setAttribute('data-comp-name', lv.companion_name || '');
-                tr.setAttribute('data-comp-rel', lv.companion_relation || '');
-                tr.innerHTML = `
-                  <td class="row-num"></td>
-                  <td class="cell-service">${lv.service_code.toUpperCase()}</td>
-                  <td class="cell-patient">${lv.patient_name}</td>
-                  <td class="cell-identity">${lv.identity_number}</td>
-                  <td class="cell-doctor">${lv.doctor_name}</td>
-                  <td>${lv.doctor_title}</td>
-                  <td>${lv.doctor_note || ''}</td>
-                  <td class="cell-issue">${lv.issue_date}</td>
-                  <td>${lv.start_date}</td>
-                  <td>${lv.end_date}</td>
-                  <td>${lv.days_count}</td>
-                  <td>${lv.is_companion ? '<span class="badge bg-warning text-dark">مرافق</span>' : '<span class="badge bg-info text-dark">أساسي</span>'}</td>
-                  <td class="cell-queries-count">${lv.queries_count}</td>
-                  <td class="cell-deleted">${lv.deleted_at}</td>
-                  <td>${lv.is_paid ? 'نعم' : 'لا'}</td>
-                  <td>${parseFloat(lv.payment_amount).toFixed(2)}</td>
-                  <td>
-                    <button class="btn btn-success btn-sm action-btn btn-restore-leave" data-bs-toggle="tooltip" title="استعادة الإجازة"><i class="bi bi-arrow-counterclockwise"></i> استعادة</button>
-                    <button class="btn btn-danger btn-sm action-btn btn-force-delete-leave" data-bs-toggle="tooltip" title="حذف نهائي"><i class="bi bi-x-circle"></i> حذف نهائي</button>
-                    <button class="btn btn-warning btn-sm action-btn btn-view-queries" data-bs-toggle="tooltip" title="عرض الاستعلامات"><i class="bi bi-journal-text"></i> استعلامات</button>
-                  </td>`;
-                tbody.appendChild(tr);
-                attachLeaveRowEvents(tr);
-              });
-              originalArchivedRows.push(...tbody.querySelectorAll('tr'));
-              archLoaded = true;
-              reIndexTable('archivedTable');
-              new bootstrap.Tooltip(document.body, {selector: '[data-bs-toggle="tooltip"]'});
-            }
-          });
-      });
 
       document.getElementById('sortLeavesNewest')?.addEventListener('click', () => {
         sortTable('leavesTable', 12, false);
