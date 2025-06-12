@@ -1,4 +1,12 @@
 <?php
+// إعدادات جلسة آمنة مع SameSite صارم
+session_set_cookie_params([
+  'lifetime' => 86400,
+  'path' => '/',
+  'httponly' => true,
+  'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+  'samesite' => 'Strict'
+]);
 session_start();
 
 // بيانات الاتصال
