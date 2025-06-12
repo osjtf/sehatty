@@ -1360,11 +1360,11 @@ $notifications_payment = [];
                 <tr data-id="<?= $lv['id'] ?>" data-patient="<?= $lv['patient_id'] ?>"
                     data-comp-name="<?= htmlspecialchars($lv['companion_name']) ?>"
                     data-comp-rel="<?= htmlspecialchars($lv['companion_relation']) ?>">
-                  <td class="row-num"></td>
-                  <td class="cell-service"><?= htmlspecialchars(strtoupper($lv['service_code'])) ?></td>
-                  <td class="cell-patient"><?= htmlspecialchars($lv['patient_name']) ?></td>
+                <tr data-id="<?= $lv['id'] ?>" data-patient="<?= $lv['patient_id'] ?>"
+                    data-comp-name="<?= htmlspecialchars($lv['companion_name'] ?? '') ?>"
+                    data-comp-rel="<?= htmlspecialchars($lv['companion_relation'] ?? '') ?>">
                   <td class="cell-identity"><?= htmlspecialchars($lv['identity_number']) ?></td>
-                  <td class="cell-doctor"><?= htmlspecialchars($lv['doctor_name']) ?></td>
+                  <td><?= htmlspecialchars($lv['doctor_note'] ?? '') ?></td>
                   <td><?= htmlspecialchars($lv['doctor_title']) ?></td>
                   <td><?= htmlspecialchars($lv['doctor_note']) ?></td>
                   <td class="cell-issue"><?= htmlspecialchars($lv['issue_date']) ?></td>
@@ -1478,13 +1478,13 @@ $notifications_payment = [];
               <?php else: ?>
                 <?php foreach ($archived as $idx => $lv): ?>
                   <tr data-id="<?= $lv['id'] ?>" data-patient="<?= $lv['patient_id'] ?>"
-                      data-comp-name="<?= htmlspecialchars($lv['companion_name']) ?>"
-                      data-comp-rel="<?= htmlspecialchars($lv['companion_relation']) ?>">
+                      data-comp-name="<?= htmlspecialchars($lv['companion_name'] ?? '') ?>"
+                      data-comp-rel="<?= htmlspecialchars($lv['companion_relation'] ?? '') ?>">
                     <td class="row-num"></td>
                     <td class="cell-service"><?= htmlspecialchars(strtoupper($lv['service_code'])) ?></td>
                     <td class="cell-patient"><?= htmlspecialchars($lv['patient_name']) ?></td>
                     <td class="cell-identity"><?= htmlspecialchars($lv['identity_number']) ?></td>
-                    <td class="cell-doctor"><?= htmlspecialchars($lv['doctor_name']) ?></td>
+                    <td><?= htmlspecialchars($lv['doctor_note'] ?? '') ?></td>
                     <td><?= htmlspecialchars($lv['doctor_title']) ?></td>
                     <td><?= htmlspecialchars($lv['doctor_note']) ?></td>
                     <td class="cell-issue"><?= htmlspecialchars($lv['issue_date']) ?></td>
@@ -1734,7 +1734,7 @@ $notifications_payment = [];
                   <tr data-id="<?= $d['id'] ?>">
                     <td class="row-num"></td>
                     <td><?= htmlspecialchars($d['name']) ?></td>
-                    <td><?= htmlspecialchars($d['title']) ?></td>
+                      <td><?= htmlspecialchars($d['note'] ?? '') ?></td>
                     <td><?= htmlspecialchars($d['note']) ?></td>
                     <td>
                       <button class="btn btn-warning btn-sm action-btn btn-edit-doctor"><i
